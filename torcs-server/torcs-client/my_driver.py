@@ -41,7 +41,7 @@ class MyDriver(Driver):
         )
         self.data_logger = DataLogWriter() if logdata else None
         self.model = SimpleRNN(10)
-        self.model.load_state_dict(torch.load('modelparameters.pkl'))
+        self.model.load_state_dict(torch.load('SimpleLSTMparameters.pkl'))
 
     @property
     def range_finder_angles(self):
@@ -88,16 +88,20 @@ class MyDriver(Driver):
         data = torch.transpose(data, 0, 1)
         predict = self.model.forward(data)
         command = Command()
-        predict = predict[0][0].numpy()        # print(predict[0])
-        if predict[0] > 0.5:
+        print(command)
+        predict = predict[0][0]        # print(predict[0])
+        
+        # print("Acceleration: " + str(predict[0].data[0]) + "Brake: " + str(predict[1].data[0]) + "Steer: " + str(predict[2].data[0]))
+        if float(predict[0].data[0]) > 0.5:
         	command.accelerator = 1
         else:
         	command.accelerator = 0
-        if predict[1] > 0.5:
+        if float(predict[1].data[0]) > 0.5:
         	command.brake = 1
         else:
         	command.brake = 0
-        command.steer = predict[2]
+        command.steer = float(predict[2].data[0])
+        # command.accelerator = 0.5
         self.steer(carstate, 0.0, command)
 
 
