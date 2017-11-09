@@ -22,7 +22,7 @@ training_names = ['aalborg.csv', 'alpine-1.csv', 'f-speedway.csv']
 
 D_in = 25
 D_out = 3
-sequence_size = 10
+sequence_size = 1
 hidden_size = 15
 
 my_data = np.empty((1,D_in))
@@ -78,7 +78,6 @@ def get_batch(sequence_size=10):
     x,y=torch.from_numpy(x),torch.from_numpy(y)
 
     x,y=x.type(torch.FloatTensor),y.type(torch.FloatTensor)
-    print(x, y)
     #print(y)
     return Variable(x), Variable(y)
 
@@ -92,7 +91,7 @@ class SimpleLSTM(torch.nn.Module):
         """
         super(SimpleLSTM, self).__init__()
         self.lstm1 = torch.nn.LSTM(input_size=D_in, hidden_size=hidden_size, num_layers=sequence_size, bias=True, dropout=False)
-        self.softmax1 = torch.nn.Linear(hidden_size, D_out)
+        self.softmax1 = torch.nn.Linear(hidden_size * sequence_size * D_in, D_out)#hidden_size, D_out)
 
     def forward(self, x):
         """
@@ -101,11 +100,11 @@ class SimpleLSTM(torch.nn.Module):
         well as arbitrary operators on Variables.
         """
         h_n, c_n = self.lstm1(x, None)
-        print(h_n)
-        print("hn")
-        print(c_n)
-        print("cn")
-        y_pred = self.softmax1(h_n.view(-1, h_n.size(2)))
+        
+
+
+        y_pred = self.softmax1(h_n.view(1, -1))
+        #print(y_pred)
         return y_pred
 
 
@@ -121,9 +120,7 @@ losses = np.zeros(n_epochs) # For plotting
 for epoch in range(n_epochs):
 
     for iter in range(n_iters):
-        x, y = get_batch(10)
-        print(x, y)
-        
+        x, y = get_batch(sequence_size)        
         # Use teacher forcing 50% of the time
         # force = np.random.random() < 0.5
         outputs = model.forward(x)
