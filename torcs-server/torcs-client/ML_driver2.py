@@ -20,12 +20,14 @@ import math, random
 from SimpleRNN import *
 
 training_names = ['aalborg.csv', 'alpine-1.csv', 'f-speedway.csv']
-sequence_size = 1
+sequence_size = 3
+row_size = 25
 D_in = sequence_size * 25
 D_out = 3
-hidden_size = 150
+hidden_size = 1024
+hidden_size_2 = 512
 
-my_data = np.empty((1,D_in))
+my_data = np.empty((1,row_size))
 
 for filename in training_names:
     # Get data, split off first row, and normalize between [0,1]
@@ -66,6 +68,8 @@ def get_batch(sequence_size=1):
     random_int = np.random.randint(0, len(my_data) - (sequence_size + 1))
     x = my_data[random_int:random_int + sequence_size].flatten()
     y = my_data[random_int + sequence_size + 1][0:3].flatten()
+    assert not np.any(np.isnan(x))
+    assert not np.any(np.isnan(y))
 
     # for n in range(sequence_size):
     #     random_data = my_data[n:n+sequence_size]
@@ -111,9 +115,9 @@ class TwoLayerNet(torch.nn.Module):
     def __init__(self, D_in, H, H2, D_out):
         super(TwoLayerNet, self).__init__()
         self.linear1 = torch.nn.Linear(D_in, H)
-        self.rnn = torch.nn.LSTM(H, H2, 1)
-        self.linear2 = torch.nn.Linear(H2, D_out)
-        self.tanh = torch.nn.Hardtanh()
+        self.rnn = torch.nn.LSTM(H, H2, 5)
+        self.linear2 = torch.nn.Linear(H2, H)
+        self.tanh = torch.nn.Linear(H, D_out)
 
     def forward(self, x, hidden=None):
         input = self.linear1(x.view(1, -1)).unsqueeze(1)
@@ -126,14 +130,16 @@ class TwoLayerNet(torch.nn.Module):
 n_epochs = 100
 n_iters = 100
 
-model = TwoLayerNet(D_in, hidden_size, 100, D_out)
+model = TwoLayerNet(D_in, hidden_size, hidden_size_2, D_out)
 criterion = torch.nn.MSELoss()
-optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
 
-losses = np.zeros(n_epochs) # For plotting
 hidden = None
-for epoch in range(n_epochs):
 
+
+for epoch in range(n_epochs):
+    losses = 0
+    counter = 0
     for iter in range(n_iters):
         x, y = get_batch(sequence_size)      
         # Use teacher forcing 50% of the time
@@ -144,12 +150,13 @@ for epoch in range(n_epochs):
 
         loss = criterion(outputs, y)
         loss.backward()
+        losses += loss
         optimizer.step()
+        counter = counter + 1
 
-        losses[epoch] += loss.data[0]
 
     if epoch > 0:
-        print(epoch, loss.data[0])
+        print(epoch, float(losses/counter))
 
 
 
