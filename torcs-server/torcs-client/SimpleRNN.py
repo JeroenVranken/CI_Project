@@ -12,7 +12,7 @@ class SimpleRNN(torch.nn.Module):
         super(SimpleRNN, self).__init__()
         self.hidden_size = hidden_size
 
-        self.inp = torch.nn.Linear(22, hidden_size)
+        self.inp = torch.nn.Linear(25, hidden_size)
         self.rnn = torch.nn.LSTM(hidden_size, hidden_size, 2, dropout=0.05)
         self.out = torch.nn.Linear(hidden_size, 3)
 
