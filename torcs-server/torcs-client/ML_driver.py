@@ -23,8 +23,9 @@ training_names = ['aalborg.csv', 'alpine-1.csv', 'f-speedway.csv']
 sequence_size = 1
 D_in = sequence_size * 25
 D_out = 3
-hidden_size = 150
 
+sequence_size = 1
+hidden_size = 15
 my_data = np.empty((1,D_in))
 
 for filename in training_names:
@@ -136,6 +137,8 @@ for epoch in range(n_epochs):
 
     for iter in range(n_iters):
         x, y = get_batch(sequence_size)      
+
+
         # Use teacher forcing 50% of the time
         # force = np.random.random() < 0.5
         outputs, hidden = model(x, None)
