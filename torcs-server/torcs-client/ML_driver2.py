@@ -68,8 +68,11 @@ def get_batch(sequence_size=1):
     random_int = np.random.randint(0, len(my_data) - (sequence_size + 1))
     x = my_data[random_int:random_int + sequence_size].flatten()
     y = my_data[random_int + sequence_size + 1][0:3].flatten()
-    assert not np.any(np.isnan(x))
-    assert not np.any(np.isnan(y))
+    # assert not np.any(np.isnan(x))
+    if (np.any(np.isnan(y))):
+        print("y is NAN! :( ")
+    if (np.any(np.isnan(x))):
+        print("x is NAN! :( ")
 
     # for n in range(sequence_size):
     #     random_data = my_data[n:n+sequence_size]
@@ -141,7 +144,8 @@ for epoch in range(n_epochs):
     losses = 0
     counter = 0
     for iter in range(n_iters):
-        x, y = get_batch(sequence_size)      
+        x, y = get_batch(sequence_size)
+        sys.exit()   
         # Use teacher forcing 50% of the time
         # force = np.random.random() < 0.5
         outputs, hidden = model(x, None)
@@ -156,7 +160,12 @@ for epoch in range(n_epochs):
 
 
     if epoch > 0:
-        print(epoch, float(losses/counter))
+        print(epoch, losses)
+
+    if epoch % 10 == 0:
+        filename = 'LaurensNet' + str(epoch) + '.pkl'
+        torch.save(model.state_dict(), filename)
+
 
 
 

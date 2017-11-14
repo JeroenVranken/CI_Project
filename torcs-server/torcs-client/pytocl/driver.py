@@ -21,6 +21,7 @@ class Driver:
     """
 
     def __init__(self, logdata=True):
+        print(' in Driver')
         self.steering_ctrl = CompositeController(
             ProportionalController(0.4),
             IntegrationController(0.2, integral_limit=1.5),
@@ -67,6 +68,7 @@ class Driver:
         # ACC_LATERAL_MAX = 6400 * 5
         # v_x = min(80, math.sqrt(ACC_LATERAL_MAX / abs(command.steering)))
         v_x = 80
+        print('Halloooootjes')
 
         self.accelerate(carstate, v_x, command)
 

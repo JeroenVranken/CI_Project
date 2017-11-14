@@ -6,6 +6,7 @@ from pytocl.protocol import Client
 
 
 def main(driver):
+    print('in the main dirver')
     """Main entry point of application."""
     parser = argparse.ArgumentParser(
         description='Client for TORCS racing car simulation with SCRC network'
@@ -38,6 +39,7 @@ def main(driver):
     )
 
     # start client loop:
+    print(driver)
     client = Client(driver=driver, **args.__dict__)
     client.run()
 
