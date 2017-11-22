@@ -27,20 +27,11 @@ class simpleGRU(nn.Module):
         self.decoder = nn.Linear(h_layer_size, D_out)
     
     def forward(self, input, hidden):
-        # print(input[0])
-        
+
         encoded = self.encoder(input.view(1, -1))
-        # print(encoded)
-        
-        # print(encoded.view(1, 1, -1))
-        
-        
         out, hidden = self.gru(encoded.view(1, 1, -1), hidden)
-        # print(out.view(1, -1))
-        # sys.exit()
         output = self.decoder(out.view(1, -1))
-        # print(output)
-        # sys.exit()
+
         return output, hidden
 
     def init_hidden(self):
@@ -70,11 +61,7 @@ def train(inp, target):
 
     for c in range(seq_length):
         output, hidden = decoder(inp[c], hidden)
-        # print(output, target[c][0:3].view(1, -1))
-        # sys.exit()
         loss += criterion(output, target[c][0:3].view(1, -1))
-        # print(loss)
-
 
     loss.backward()
     decoder_optimizer.step()
@@ -82,7 +69,7 @@ def train(inp, target):
     return loss.data[0] / seq_length
 
 def read_data(filename):
-    pd_data = pd.read_csv('all_tracks_table_tools.csv.*')
+    pd_data = pd.read_csv('all_tracks.csv')
     data = torch.from_numpy(pd_data.values).type(torch.FloatTensor)
     data_size = data.shape[0]
     D_in = data.shape[1]
@@ -102,7 +89,7 @@ def get_train_pair(data, start_ix, seq_length):
 if __name__ == '__main__':
     np.random.seed(1)
 
-    seq_length = 5 # number of steps to unroll the RNN for
+    seq_length = 25 # number of steps to unroll the RNN for
     hidden_size = 25
     n_hidden_layers = 3
     D_out = 3
@@ -146,12 +133,12 @@ if __name__ == '__main__':
             loss = train(inp, target)
             loss_avg += loss
             counter += 1
-            if counter % 100 == 0:
+            if counter % 500 == 0:
                 print('[%s (%d %d%%) %.4f]' % (time_since(start), epoch, epoch / n_epochs * 100, loss))
 
 
         if epoch % print_every == 0:
-            print('[%s (%d %d%%) %.4f]' % (time_since(start), epoch, epoch / n_epochs * 100, loss))
+            print('[Finished Epoch %s (%d %d%%) %.4f]' % (time_since(start), epoch, epoch / n_epochs * 100, loss))
             # print(evaluate('I ', predict_len=100, temperature=0.4), '\n')
             
 
@@ -162,6 +149,10 @@ if __name__ == '__main__':
         if epoch % save_every == 0:
             torch.save(decoder.state_dict(), 'simpleGRU_epoch_' + str(epoch) + '_' + filename + '.pkl')
             print("Model saved, epoch: %d" % (epoch))
+
+    f= open("all_losses.txt","w+")
+    for i in range(len(all_losses)):
+        f.write(str(all_losses[i]) + ',')
 
 
 #------------------------------------ RIP --------------------------
