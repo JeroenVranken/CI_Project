@@ -18,9 +18,52 @@ from pytocl.analysis import DataLogWriter
 from pytocl.car import State, Command, MPS_PER_KMH
 from pytocl.controller import CompositeController, ProportionalController, \
     IntegrationController, DerivativeController
+from networks import JNetV1, JNetV2
 
 _logger = logging.getLogger(__name__)
 
+# seq_length = 10
+batch_size = 1
+row_size = 25
+h_layer_size = 25
+n_hidden_layers = 3
+
+D_in = 25
+D_out = 3
+
+seq_length = 5 # number of steps to unroll the RNN for
+
+
+class simpleNet(nn.Module):
+    def __init__(self):
+        super(simpleNet, self).__init__()
+        self.D_in = 25
+        self.h1_size = 100
+        self.h2_size = 50
+        self.h3_size = 20
+        self.D_out = 3
+
+        self.inp_h1 = nn.Linear(self.D_in, self.h1_size)
+        self.h1_h2 = nn.Linear(self.h1_size, self.h2_size)
+        self.h2_h3 = nn.Linear(self.h2_size, self.h3_size)
+        self.out = nn.Linear(self.h3_size, self.D_out)
+        self.relu = nn.ReLU()
+        self.tanh = nn.Tanh()
+        self.sigm = nn.Sigmoid()
+    
+    def forward(self, x):
+        h1 = self.inp_h1(x)
+        h1_act = self.relu(h1)
+        h2 = self.h1_h2(h1_act)
+        h2_act = self.relu(h2)
+        h3 = self.h2_h3(h2)
+        h3_act = self.relu(h3)
+        output = self.out(h3_act)
+        out_relu= self.sigm(output[0:2])
+        out_steer = self.tanh(output[2])
+        out_activated = torch.cat((out_relu, out_steer), 0)
+
+        return out_activated
 class MyDriver(Driver):
 
 
@@ -40,7 +83,14 @@ class MyDriver(Driver):
             ProportionalController(3.7),
         )
         self.data_logger = DataLogWriter() if logdata else None
+
+        self.model = simpleNet()
+        weights = '/home/jeroen/mount/CI_Project/torcs-client/simpleNet_epoch_8_f-speedway.csv.pkl'
+
+        self.model.load_state_dict(torch.load(weights))
+        self.input = torch.FloatTensor(D_in)
         self.counter = 0
+        print('Using: ' + weights)
 
     @property
     def range_finder_angles(self):
@@ -63,27 +113,88 @@ class MyDriver(Driver):
         if self.data_logger:
             self.data_logger.close()
             self.data_logger = None
+    
+    
+    def update_history_seq_len(self, output, carstate):
+        
+        # Roll the sequence so the last history is now at front
+        throwaway = self.input_sequence[0]
+        keep = self.input_sequence[1:]
+        self.input_sequence = torch.cat((keep, throwaway.view(1, -1)), 0)
+
+        #Overwrite old values with new prediction and carstate
+        self.input_sequence[-1][0] = self.pred[0]
+        self.input_sequence[-1][1] = self.pred[1]
+        self.input_sequence[-1][2] = self.pred[2]
+        self.input_sequence[-1][3] = carstate.speed_x *3.6
+        self.input_sequence[-1][4] = carstate.distance_from_center
+        self.input_sequence[-1][5] = carstate.angle
+
+        for index, edge in enumerate(carstate.distances_from_edge):
+            self.input_sequence[-1][6 + index] = edge
+
+    def update_state(self, pred, carstate):
+        
+        # # Roll the sequence so the last history is now at front
+        # throwaway = self.input_sequence[0]
+        # print(self.input_sequence.shape)
+        
+        state_t_plus = torch.FloatTensor(D_in)
+        # print(state_t_plus)
+        # sys.exit()
+        #Overwrite old values with new prediction and carstate
+        # print('[BEFORE]')
+        # print(state_t_plus[0][2])
+        # sys.exit()
+
+        state_t_plus[0] = pred.data[0]
+        state_t_plus[1] = pred.data[1]
+        state_t_plus[2] = pred.data[2]
+        state_t_plus[3] = carstate.speed_x *3.6
+        state_t_plus[4] = carstate.distance_from_center
+        state_t_plus[5] = carstate.angle
+
+        for index, edge in enumerate(carstate.distances_from_edge):
+            state_t_plus[6 + index] = edge
+        return state_t_plus
 
     def drive(self, carstate: State) -> Command:
         """
         Produces driving command in response to newly received car state.
 
-        This is a dummy driving routine, very dumb and not really considering a
-        lot of inputs. But it will get the car (if not disturbed by other
-        drivers) successfully driven along the race track.
-
         """
-        command = Command()
-        v_x = 300
 
+        # Create new network input based on previous states
+
+        out = self.model(Variable(self.input))
+        
+        self.input = self.update_state(out, carstate)
+
+
+        #Create command
+        command = Command()
+        command.accelerator = out.data[0]
+        command.brake = out.data[1]
+        command.steering = out.data[2]
+        # command.gear = 1
+
+        # if out.data[0] > 0.5:
+            # command.accelerator = 0.4
+        # command.brake = 0.1
+        # print(out.data[0][0])
+        # sys.exit()
+
+        v_x = 100
         self.accelerate(carstate, v_x, command)
 
-        command.brake = 0
-        command.steer = 0.1
-
         self.counter += 1
-        if self.counter % 10 == 0:
+        # if self.counter == 20000:
+            # sys.exit()
+
+        if self.counter % 20 == 0:
             print(command)
+
+        self.input[2] = command.accelerator
 
         return command
 

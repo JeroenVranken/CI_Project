@@ -12,41 +12,7 @@ import numpy as np
 import time, math
 import sys
 import pandas as pd
-
-class simpleNet(nn.Module):
-    def __init__(self):
-        super(simpleNet, self).__init__()
-        self.D_in = 25
-        self.h1_size = 100
-        self.h2_size = 50
-        self.h3_size = 20
-        self.D_out = 3
-        # self.n_hidden_layers = n_hidden_layers
-
-        self.inp_h1 = nn.Linear(self.D_in, self.h1_size)
-        self.h1_h2 = nn.Linear(self.h1_size, self.h2_size)
-        self.h2_h3 = nn.Linear(self.h2_size, self.h3_size)
-        self.out = nn.Linear(self.h3_size, self.D_out)
-        self.relu = nn.ReLU()
-        self.tanh = nn.Tanh()
-        self.sigm = nn.Sigmoid()
-        # self.gru = nn.GRU(h_layer_size, h_layer_size, n_hidden_layers)
-        # self.decoder = nn.Linear(h_layer_size, D_out)
-    
-    def forward(self, x):
-
-        h1 = self.inp_h1(x)
-        h1_act = self.relu(h1)
-        h2 = self.h1_h2(h1_act)
-        h2_act = self.relu(h2)
-        h3 = self.h2_h3(h2)
-        h3_act = self.relu(h3)
-        output = self.out(h3_act)
-        out_relu= self.sigm(output[0:2])
-        out_steer = self.tanh(output[2])
-        out_activated = torch.cat((out_relu, out_steer), 0)
-
-        return out_activated
+from networks import simpleNetV2
 
 
 def random_train(seq_length):
@@ -120,12 +86,12 @@ if __name__ == '__main__':
     save_every = 1
 
     # Read in file
-    filename = 'aalborg_updated.csv'
+    filename = 'f-speedway.csv'
     data, data_size, D_in = read_data(filename)
     print('Data length: %d' % data_size)
 
     # Setup network
-    model = simpleNet()
+    model = simpleNetV2()
     # decoder.load_state_dict(torch.load('simpleGRU_epoch_2000file_sherlock.txt.pkl'))
     criterion = nn.MSELoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr)
@@ -172,7 +138,7 @@ if __name__ == '__main__':
             loss_avg = 0
         
         if epoch % save_every == 0:
-            torch.save(model.state_dict(), 'simpleNet_epoch_' + str(epoch) + '_' + filename + '.pkl')
+            torch.save(model.state_dict(), 'simpleNetV1_epoch_' + str(epoch) + '_' + filename + '.pkl')
             print("Model saved, epoch: %d" % (epoch))
 
 
