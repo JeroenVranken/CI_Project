@@ -12,7 +12,7 @@ import numpy as np
 import time, math
 import sys
 import pandas as pd
-from networks import simpleNetV2
+from networks import simpleNetV2, simpleNetV3, simpleNetV4, simpleNetV5
 
 
 def random_train(seq_length):
@@ -80,18 +80,18 @@ if __name__ == '__main__':
 
     lr = 0.01
 
-    n_epochs = 100
+    n_epochs = 10
     print_every = 1
     plot_every = 1
     save_every = 1
 
     # Read in file
-    filename = 'f-speedway.csv'
+    filename = 'all_tracks.csv'
     data, data_size, D_in = read_data(filename)
     print('Data length: %d' % data_size)
 
     # Setup network
-    model = simpleNetV2()
+    model = simpleNetV5()
     # decoder.load_state_dict(torch.load('simpleGRU_epoch_2000file_sherlock.txt.pkl'))
     criterion = nn.MSELoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr)
@@ -138,9 +138,12 @@ if __name__ == '__main__':
             loss_avg = 0
         
         if epoch % save_every == 0:
-            torch.save(model.state_dict(), 'simpleNetV1_epoch_' + str(epoch) + '_' + filename + '.pkl')
+            torch.save(model.state_dict(), 'simpleNetV5_epoch_' + str(epoch) + '_' + filename + '.pkl')
             print("Model saved, epoch: %d" % (epoch))
 
+        f= open("all_losses_" + filename + ".txt","w+")
+        for i in range(len(all_losses)):
+            f.write(str(all_losses[i]) + ',')
 
 #------------------------------------ RIP --------------------------
 # def create_dataset(filenames):

@@ -60,10 +60,11 @@ class JNetV2(torch.nn.Module):
         return f2, self.states
 
 
+# Initial linear net
 
 class simpleNetV1(nn.Module):
     def __init__(self):
-        super(simpleNet, self).__init__()
+        super(simpleNetV1, self).__init__()
         self.D_in = 25
         self.h1_size = 100
         self.h2_size = 50
@@ -92,10 +93,11 @@ class simpleNetV1(nn.Module):
 
         return out_activated
 
+# Same as simpleNetV1 but increased hidden layer size best epoch = 1
 
 class simpleNetV2(nn.Module):
     def __init__(self):
-        super(simpleNet, self).__init__()
+        super(simpleNetV2, self).__init__()
         self.D_in = 25
         self.h1_size = 600
         self.h2_size = 300
@@ -123,3 +125,123 @@ class simpleNetV2(nn.Module):
         out_activated = torch.cat((out_relu, out_steer), 0)
 
         return out_activated
+
+# Made simpleNetV2 deeper with extra hidden layer, best epoch = 3
+# seems like the deeper net makes the steering less smooth (non-smoothness caused by training data)
+
+class simpleNetV3(nn.Module):
+    def __init__(self):
+        super(simpleNetV3, self).__init__()
+        self.D_in = 25
+        self.h1_size = 600
+        self.h2_size = 400
+        self.h3_size = 200
+        self.h4_size = 100
+        self.D_out = 3
+
+        self.inp_h1 = nn.Linear(self.D_in, self.h1_size)
+        self.h1_h2 = nn.Linear(self.h1_size, self.h2_size)
+        self.h2_h3 = nn.Linear(self.h2_size, self.h3_size)
+        self.h3_h4 = nn.Linear(self.h3_size, self.h4_size)
+        self.out = nn.Linear(self.h4_size, self.D_out)
+        self.relu = nn.ReLU()
+        self.tanh = nn.Tanh()
+        self.sigm = nn.Sigmoid()
+    
+    def forward(self, x):
+        h1 = self.inp_h1(x)
+        h1_act = self.relu(h1)
+        h2 = self.h1_h2(h1_act)
+        h2_act = self.relu(h2)
+        h3 = self.h2_h3(h2)
+        h3_act = self.relu(h3)
+        h4 = self.h3_h4(h3)
+        h4_act = self.relu(h4)
+        output = self.out(h4_act)
+        out_relu= self.sigm(output[0:2])
+        out_steer = self.tanh(output[2])
+        out_activated = torch.cat((out_relu, out_steer), 0)
+
+        return out_activated
+
+
+# Made simpleNetV1 deeper, and removed convolution
+# best epoch = 6
+class simpleNetV4(nn.Module):
+    def __init__(self):
+        super(simpleNetV4, self).__init__()
+        self.D_in = 25
+        self.h1_size = 100
+        self.h2_size = 100
+        self.h3_size = 100
+        self.h4_size = 100
+        self.h5_size = 100
+        self.h6_size = 100
+        self.D_out = 3
+
+        self.inp_h1 = nn.Linear(self.D_in, self.h1_size)
+        self.h1_h2 = nn.Linear(self.h1_size, self.h2_size)
+        self.h2_h3 = nn.Linear(self.h2_size, self.h3_size)
+        self.h3_h4 = nn.Linear(self.h3_size, self.h4_size)
+        self.h4_h5 = nn.Linear(self.h4_size, self.h5_size)
+        self.h5_h6 = nn.Linear(self.h5_size, self.h6_size)
+
+        self.out = nn.Linear(self.h6_size, self.D_out)
+        self.relu = nn.ReLU()
+        self.tanh = nn.Tanh()
+        self.sigm = nn.Sigmoid()
+    
+    def forward(self, x):
+        h1 = self.inp_h1(x)
+        h1_act = self.relu(h1)
+        h2 = self.h1_h2(h1_act)
+        h2_act = self.relu(h2)
+        h3 = self.h2_h3(h2)
+        h3_act = self.relu(h3)
+        h4 = self.h3_h4(h3)
+        h4_act = self.relu(h4)
+        h5 = self.h4_h5(h4)
+        h5_act = self.relu(h5)
+        h6 = self.h5_h6(h5)
+        h6_act = self.relu(h6)
+        output = self.out(h6_act)
+        out_relu= self.sigm(output[0:2])
+        out_steer = self.tanh(output[2])
+        out_activated = torch.cat((out_relu, out_steer), 0)
+
+        return out_activated
+
+class simpleNetV5(nn.Module):
+    def __init__(self):
+        super(simpleNetV5, self).__init__()
+        self.D_in = 25
+        self.h1_size = 1000
+        self.h2_size = 500
+        self.h3_size = 100
+        self.D_out = 3
+
+        self.inp_h1 = nn.Linear(self.D_in, self.h1_size)
+        self.h1_h2 = nn.Linear(self.h1_size, self.h2_size)
+        self.h2_h3 = nn.Linear(self.h2_size, self.h3_size)
+        self.out = nn.Linear(self.h3_size, self.D_out)
+        self.relu = nn.ReLU()
+        self.tanh = nn.Tanh()
+        self.sigm = nn.Sigmoid()
+    
+    def forward(self, x):
+        h1 = self.inp_h1(x)
+        h1_act = self.relu(h1)
+        h2 = self.h1_h2(h1_act)
+        h2_act = self.relu(h2)
+        h3 = self.h2_h3(h2)
+        h3_act = self.relu(h3)
+        output = self.out(h3_act)
+        out_relu= self.sigm(output[0:2])
+        out_steer = self.tanh(output[2])
+        out_activated = torch.cat((out_relu, out_steer), 0)
+
+        return out_activated
+
+
+# Todo: try different optimizers and loss functions
+# So far all have been trained with nn.MSEloss and optimizer = SGD, learning rate = 0.01
