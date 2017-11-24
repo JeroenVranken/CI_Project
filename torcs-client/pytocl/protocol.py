@@ -129,7 +129,8 @@ class Client:
 
             elif MSG_RESTART in buffer:
                 _logger.info('Server requested restart of driver.')
-                self.driver.on_restart()
+                self.stop()
+                #self.driver.on_restart()
 
             else:
                 sensor_dict = self.serializer.decode(buffer)

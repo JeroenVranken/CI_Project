@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 
 from pytocl.main import main
-from my_driver import MyDriver
+from neat_driver import NeatDriver
 
 if __name__ == '__main__':
-    main(MyDriver(logdata=False))
+    main(NeatDriver(logdata=False))
