@@ -18,7 +18,7 @@ from pytocl.analysis import DataLogWriter
 from pytocl.car import State, Command, MPS_PER_KMH
 from pytocl.controller import CompositeController, ProportionalController, \
     IntegrationController, DerivativeController
-from networks import JNetV1, JNetV2
+from networks import JNetV1, JNetV2, simpleNetV2 
 
 _logger = logging.getLogger(__name__)
 
@@ -84,8 +84,8 @@ class MyDriver(Driver):
         )
         self.data_logger = DataLogWriter() if logdata else None
 
-        self.model = simpleNet()
-        weights = '/home/jeroen/mount/CI_Project/torcs-client/simpleNet_epoch_8_f-speedway.csv.pkl'
+        self.model = simpleNetV2()
+        weights = 'simpleNetV2_epoch_3_all_tracks.csv.pkl'
 
         self.model.load_state_dict(torch.load(weights))
         self.input = torch.FloatTensor(D_in)

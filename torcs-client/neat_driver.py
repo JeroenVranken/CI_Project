@@ -22,7 +22,7 @@ from pytocl.controller import CompositeController, ProportionalController, \
 from networks import JNetV1, JNetV2, simpleNetV2
 
 import neat
-import evolve
+#import evolve
 from pytocl.main import main
 import time
 import visualize
@@ -66,7 +66,8 @@ class NeatDriver:
         self.net = net
         self.clock = time.time()
         self.done = False
-        
+        self.temp_fitness = 0
+
 
 
     @property
@@ -153,6 +154,7 @@ class NeatDriver:
         if self.counter % 100 == 0:
             self.track_check1 = self.check_offtrack(carstate)
 
+        self.temp_fitness += carstate.speed_x * (np.cos(carstate.angle*(np.pi/180)) - np.absolute(np.sin(carstate.angle * (np.pi/180))))
         self.counter += 1
 
 
@@ -163,21 +165,20 @@ class NeatDriver:
         command.accelerator = outputs[0]
         command.brake = outputs[1]
         command.steering = outputs[2]
-        v_x = 180
+        v_x = 350
+        self.counter += 1
 
         self.accelerate(carstate, v_x, command)
 
         if self.data_logger:
             self.data_logger.log(carstate, command)
         
-        if carstate.damage >= 9500 or carstate.last_lap_time > 0 or carstate.current_lap_time >  60:
-            positions_won = 28 - carstate.race_position 
+        if carstate.damage >= 9500 or carstate.last_lap_time > 0 or carstate.current_lap_time > 60:
+            positions_won = 10 - carstate.race_position 
             damage = (carstate.damage) / 1000
-            distance = carstate.distance_raced/100
             global fitness
-            fitness = positions_won - damage + distance
+            fitness = (self.temp_fitness/self.counter) + positions_won - damage 
             command.meta = 1
-
         return command
 
 
@@ -232,7 +233,6 @@ class NeatDriver:
 
 net = None
 fitness = 0
-
 # Use the NN network phenotype and the discrete actuator force function.
 def eval_genome(genome, config):
     
@@ -240,23 +240,16 @@ def eval_genome(genome, config):
     net = neat.nn.FeedForwardNetwork.create(genome, config)
     driver = main(NeatDriver(logdata=False, net=net))
     global fitness
-    print("THE FITNESS IS: ", fitness)
     return fitness
-    
-    
-    # print('carstate', inputs)
-    # self.action_neat = net.activate(inputs)
 
-    # # Apply action to the simulated driver
-    # force = neat_driver.command
-    # sim.step(force)
+def save_checkpoint(self, config, population, species_set, generation):
+    """ Save the current simulation state. """
+    filename = '{0}{1}'.format(self.filename_prefix,generation)
+    print("Saving checkpoint to {0}".format(filename))
 
-    # fitness = sim.t
-
-    # fitnesses.append(fitness)
-
-    # # The genome's fitness is its worst performance across all runs.
-    # return min(fitnesses)
+    with gzip.open(filename, 'w', compresslevel=5) as f:
+        data = (generation, config, population, species_set, random.getstate())
+        pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def eval_genomes(genomes, config):
@@ -264,6 +257,8 @@ def eval_genomes(genomes, config):
     for genome_id, genome in genomes:
         print("ID number of genome: ", counter)
         genome.fitness = eval_genome(genome, config)
+        print("The fitness is: ", genome.fitness)
+        print("----------------------------------------")
         counter += 1
 
 def run():
@@ -280,7 +275,7 @@ def run():
     pop.add_reporter(stats)
     pop.add_reporter(neat.StdOutReporter(True))
 
-    pe = neat.ParallelEvaluator(1, eval_genome)
+    pe = pop.run(eval_genomes, 300)
     winner = pop.run(pe.evaluate)
 
    # Save the winner.

@@ -138,6 +138,9 @@ class Client:
                 _logger.debug(carstate)
 
                 command = self.driver.drive(carstate)
+                if command.meta == 1:
+                    self.stop()
+
 
                 _logger.debug(command)
                 buffer = self.serializer.encode(command.actuator_dict)
