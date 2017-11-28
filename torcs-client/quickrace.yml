@@ -1,0 +1,7 @@
+players:
+    student:
+      working_dir: /home/laurens/Documents/CI_Project/torcs-client
+controller:
+  torcs_config_file: /home/laurens/Documents/CI_Project/torcs-client/quickrace.xml
+rater:
+  filename: ./ratings.csv

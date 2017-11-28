@@ -20,7 +20,7 @@ from pytocl.analysis import DataLogWriter
 from pytocl.car import State, Command, MPS_PER_KMH
 from pytocl.controller import CompositeController, ProportionalController, \
     IntegrationController, DerivativeController
-from networks import JNetV1, JNetV2
+from networks import JNetV1, JNetV2, simpleNetV2 
 
 _logger = logging.getLogger(__name__)
 

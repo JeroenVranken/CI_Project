@@ -149,6 +149,7 @@ class Command(Value):
         self.gear = 0
         self.steering = 0.0
         self.focus = 0.0
+        self.meta = 0
 
     @property
     def actuator_dict(self):
@@ -159,5 +160,5 @@ class Command(Value):
             steer=[self.steering],
             clutch=[0],  # server car does not need clutch control?
             focus=[self.focus],
-            meta=[0]  # no support for server restart via meta=1
+            meta=[self.meta]  # no support for server restart via meta=1
         )
