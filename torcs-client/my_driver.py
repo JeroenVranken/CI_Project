@@ -9,6 +9,8 @@ from torch import optim
 import numpy as np
 import math, random
 import sys
+from networks import simpleNetV2, simpleNetV3, simpleNetV5
+import re
 
 import logging
 
@@ -34,13 +36,13 @@ D_out = 3
 seq_length = 5 # number of steps to unroll the RNN for
 
 
-class simpleNet(nn.Module):
+class simpleNetV6(nn.Module):
     def __init__(self):
-        super(simpleNet, self).__init__()
+        super(simpleNetV6, self).__init__()
         self.D_in = 25
-        self.h1_size = 100
-        self.h2_size = 50
-        self.h3_size = 20
+        self.h1_size = 300
+        self.h2_size = 300
+        self.h3_size = 300
         self.D_out = 3
 
         self.inp_h1 = nn.Linear(self.D_in, self.h1_size)
@@ -64,6 +66,7 @@ class simpleNet(nn.Module):
         out_activated = torch.cat((out_relu, out_steer), 0)
 
         return out_activated
+
 class MyDriver(Driver):
 
 
@@ -84,12 +87,18 @@ class MyDriver(Driver):
         )
         self.data_logger = DataLogWriter() if logdata else None
 
-        self.model = simpleNet()
-        weights = '/home/jeroen/mount/CI_Project/torcs-client/simpleNet_epoch_8_f-speedway.csv.pkl'
+        self.model = simpleNetV2()
+        weights = 'simpleNetV2_epoch_3_all_tracks.csv.pkl'
 
         self.model.load_state_dict(torch.load(weights))
         self.input = torch.FloatTensor(D_in)
         self.counter = 0
+        self.name = '3001'
+        self.log = []
+        self.logname = '../logs/example3.log'
+
+        logging.basicConfig(filename=self.logname, level=logging.INFO, format='%(message)s')
+        
         print('Using: ' + weights)
 
     @property
@@ -184,7 +193,7 @@ class MyDriver(Driver):
         # print(out.data[0][0])
         # sys.exit()
 
-        v_x = 100
+        v_x = 500
         self.accelerate(carstate, v_x, command)
 
         self.counter += 1
@@ -192,9 +201,15 @@ class MyDriver(Driver):
             # sys.exit()
 
         if self.counter % 20 == 0:
-            print(command)
+            # print(command)
+            self.printToLog(carstate, command)
+            self.readFromLog(carstate)
+
+        if self.counter % 1000 == 0:
+            print(self.log)
 
         self.input[2] = command.accelerator
+        
 
         return command
 
@@ -235,4 +250,25 @@ class MyDriver(Driver):
             steering_error,
             carstate.current_lap_time
         )
+
+    def printToLog(self, carstate, command):
+        # print(carstate)
+        # sys.exit()
+        # print(self.name, carstate.distance_from_start, carstate.distance_from_center, command.brake, command.accelerator)
+        logging.info('%s,%d,%d,%d,%d', self.name, carstate.distance_from_start, carstate.distance_from_center, command.brake, command.accelerator)
+
+
+    def readFromLog(self, carstate):
+        f = open(self.logname, "r")
+        lines = f.readlines()
+        for line in lines:
+            if re.match('3001', line):
+                if not line in self.log:
+                    self.log.append(line)
+                    
+
+        # print(self.log)
+        # print(lines)
+        # sys.exit()
+
 
