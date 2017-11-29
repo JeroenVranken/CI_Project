@@ -27,14 +27,14 @@ import neat
 from pytocl.main import main
 import time
 import visualize
-from math import sqrt, exp
+
 _logger = logging.getLogger(__name__)
 
 D_in = 25
 D_out = 3
 
 
-class NeatDriver:
+class TestNeatDriver:
     """
     Driving logic.
 
@@ -94,9 +94,9 @@ class NeatDriver:
             self.data_logger = None
 
     def make_input(self, carstate, out):
-        print('rpm: ', carstate.rpm)
-        print('speed, ', carstate.speed_x)
-        inputs = [carstate.rpm/10000, carstate.speed_x/100, out[0], out[1]]
+        inputs = []
+        inputs.extend([carstate.angle, carstate.speed_x])
+        inputs.extend(out[0], out[1])
         return inputs
 
     def update_state(self, pred, carstate):
@@ -149,24 +149,26 @@ class NeatDriver:
         self.counter += 1
 
 
+        outputs = net.activate(inputs)
 
 
         command = Command()
-        command.gear = np.argmax(np.asarray(net.activate(inputs))) + 1
-        command.accelerator = out.data[0]
-        command.brake = out.data[1]
-        command.steering = out.data[2]
+        command.accelerator = outputs[0]
+        command.brake = outputs[1]
+        command.steering = outputs[2]
         v_x = 350
         self.counter += 1
 
-        #self.accelerate(carstate, v_x, command)
+        self.accelerate(carstate, v_x, command)
 
         if self.data_logger:
             self.data_logger.log(carstate, command)
         
         if carstate.damage >= 9500 or carstate.last_lap_time > 0 or carstate.current_lap_time > 60:
+            positions_won = 10 - carstate.race_position 
+            damage = (carstate.damage) / 1000
             global fitness
-            fitness =  (self.temp_fitness/self.counter)  
+            fitness = self.eta + (self.temp_fitness/self.counter) + positions_won - damage 
             command.meta = 1
         return command
 
@@ -199,7 +201,7 @@ class NeatDriver:
                 # off track, reduced grip:
                 acceleration = min(0.4, acceleration)
 
-            #command.accelerator = min(acceleration, 1)
+            command.accelerator = min(acceleration, 1)
 
             if carstate.rpm > 8000:
                 command.gear = carstate.gear + 1
@@ -212,8 +214,6 @@ class NeatDriver:
 
         if not command.gear:
             command.gear = carstate.gear or 1
-        if command.gear < 1:
-            command.gear = 1
 
     def steer(self, carstate, target_track_pos, command):
         steering_error = target_track_pos - carstate.distance_from_center
@@ -224,65 +224,56 @@ class NeatDriver:
 
 net = None
 fitness = 0
-counter = 1 
 # Use the NN network phenotype and the discrete actuator force function.
 def eval_genome(genome, config):
     
     global net
-    global counter
-    global fitness
     net = neat.nn.FeedForwardNetwork.create(genome, config)
-    driver = main(NeatDriver(logdata=False, net=net))
-    print("ID number of genome: ", counter)
-    print("The fitness is: ", fitness)
-    print("----------------------------------------")
-    counter += 1
-    
+    driver = main(TestNeatDriver(logdata=False, net=net))
+    global fitness
     return fitness
+
+def save_checkpoint(self, config, population, species_set, generation):
+    """ Save the current simulation state. """
+    filename = '{0}{1}'.format(self.filename_prefix,generation)
+    print("Saving checkpoint to {0}".format(filename))
+
+    winnerfile = '{0}{1}'.format('neat-winner', generation)
+    winner = population.best_fit_genome(-1)
+
+    with gzip.open(filename, 'w', compresslevel=5) as f:
+        data = (generation, config, population, species_set, random.getstate())
+        pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    with gzip.open(winnerfile, 'w', compresslevel=5) as f:
+        pickle.dump(winner, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def eval_genomes(genomes, config):
+    counter = 1 
     for genome_id, genome in genomes:
-        genome.fitness = eval_genome(genome, config)
-
-def softmax(values):
-
-    print('values is: ', values)
-
-    # e_values = []
-    # for i in range(len(values)):
-    #     e_values.append(exp(values[i]))
-    # s = sum(e_values)
-    # inv_s = 1.0/s
-    return ev* inv_s
-
+        if genome_id == 1:
+            genome.fitness = 100
+        else:
+            genome.fitness = 0
 
 def run():
-    # Load the config file, which is assumed to live in
-    # the same directory as this script.
-    local_dir = os.path.dirname(__file__)
-    config_path = os.path.join(local_dir, 'config-neat')
-    config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
-                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
-                         config_path)
 
+    pop = Checkpointer.restore_checkpoint('neat-checkpoint-3')
 
+    winner = Checkpointer.
 
-    pop = neat.Population(config)
-    #pop = Checkpointer.restore_checkpoint('neat-checkpoint-4')
     stats = neat.StatisticsReporter()
-    pop.add_reporter(stats)
-    pop.add_reporter(neat.StdOutReporter(True))
-    pop.add_reporter(Checkpointer(generation_interval=10))
 
-    pe = neat.ParallelEvaluator(1, eval_genome) 
+    pe = neat.ParallelEvaluator(1, eval_genome)
     winner = pop.run(pe.evaluate)
 
-   # Save the winner.
-    with open('winner-feedforward', 'wb') as f:
-        pickle.dump(winner, f)
-
     print(winner)
+
+    #print(pop.statistics.best_genome())
+
+    net = neat.nn.FeedForwardNetwork.create(genome, config)
+    driver = main(TestNeatDriver(logdata=False, net=net))
     
     visualize.plot_stats(stats, ylog=True, view=True, filename="feedforward-fitness.svg")
     visualize.plot_species(stats, view=True, filename="feedforward-speciation.svg")
