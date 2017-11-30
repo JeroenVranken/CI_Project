@@ -10,6 +10,7 @@ import numpy as np
 import math, random
 import sys
 from networks import simpleNetV2, simpleNetV3, simpleNetV5
+from communication import Sender, Receiver
 import re
 
 import logging
@@ -35,38 +36,6 @@ D_out = 3
 
 seq_length = 5 # number of steps to unroll the RNN for
 
-
-class simpleNetV6(nn.Module):
-    def __init__(self):
-        super(simpleNetV6, self).__init__()
-        self.D_in = 25
-        self.h1_size = 300
-        self.h2_size = 300
-        self.h3_size = 300
-        self.D_out = 3
-
-        self.inp_h1 = nn.Linear(self.D_in, self.h1_size)
-        self.h1_h2 = nn.Linear(self.h1_size, self.h2_size)
-        self.h2_h3 = nn.Linear(self.h2_size, self.h3_size)
-        self.out = nn.Linear(self.h3_size, self.D_out)
-        self.relu = nn.ReLU()
-        self.tanh = nn.Tanh()
-        self.sigm = nn.Sigmoid()
-    
-    def forward(self, x):
-        h1 = self.inp_h1(x)
-        h1_act = self.relu(h1)
-        h2 = self.h1_h2(h1_act)
-        h2_act = self.relu(h2)
-        h3 = self.h2_h3(h2)
-        h3_act = self.relu(h3)
-        output = self.out(h3_act)
-        out_relu= self.sigm(output[0:2])
-        out_steer = self.tanh(output[2])
-        out_activated = torch.cat((out_relu, out_steer), 0)
-
-        return out_activated
-
 class MyDriver(Driver):
 
 
@@ -88,14 +57,21 @@ class MyDriver(Driver):
         self.data_logger = DataLogWriter() if logdata else None
 
         self.model = simpleNetV2()
+
+        self.sender = Sender(6002)
+        self.pheromones = []
+        # self.receiver = Receiver(6001)
+
         weights = 'simpleNetV2_epoch_3_all_tracks.csv.pkl'
 
         self.model.load_state_dict(torch.load(weights))
-        self.input = torch.FloatTensor(D_in)
+        self.input = torch.zeros(D_in)
+
         self.counter = 0
         self.name = '3001'
         self.log = []
         self.logname = '../logs/example3.log'
+
 
         logging.basicConfig(filename=self.logname, level=logging.INFO, format='%(message)s')
         
@@ -168,48 +144,43 @@ class MyDriver(Driver):
         return state_t_plus
 
     def drive(self, carstate: State) -> Command:
-        """
-        Produces driving command in response to newly received car state.
-
-        """
-
-        # Create new network input based on previous states
 
         out = self.model(Variable(self.input))
         
         self.input = self.update_state(out, carstate)
-
 
         #Create command
         command = Command()
         command.accelerator = out.data[0]
         command.brake = out.data[1]
         command.steering = out.data[2]
-        # command.gear = 1
 
-        # if out.data[0] > 0.5:
-            # command.accelerator = 0.4
-        # command.brake = 0.1
-        # print(out.data[0][0])
-        # sys.exit()
-
-        v_x = 500
+        v_x = 220
         self.accelerate(carstate, v_x, command)
 
         self.counter += 1
-        # if self.counter == 20000:
-            # sys.exit()
 
-        if self.counter % 20 == 0:
-            # print(command)
-            self.printToLog(carstate, command)
-            self.readFromLog(carstate)
+
+        # if self.counter % 20 == 0:
+            # self.printToLog(carstate, command)
+            # self.readFromLog(carstate)
 
         if self.counter % 1000 == 0:
             print(self.log)
 
+
         self.input[2] = command.accelerator
-        
+        # print(self.counter)
+
+        # if carstate.current_lap_time % 1 == 0:
+        if self.counter % 100 == 0:
+            print("Sending mesage")
+            msg = self.sender.sendReceive(carstate.distance_from_start, )
+            self.pheromones.append(msg)
+            print(self.pheromones)
+            # print("Message received:")
+            # print(msg)
+
 
         return command
 
@@ -258,13 +229,15 @@ class MyDriver(Driver):
         logging.info('%s,%d,%d,%d,%d', self.name, carstate.distance_from_start, carstate.distance_from_center, command.brake, command.accelerator)
 
 
-    def readFromLog(self, carstate):
-        f = open(self.logname, "r")
-        lines = f.readlines()
-        for line in lines:
-            if re.match('3001', line):
-                if not line in self.log:
-                    self.log.append(line)
+#-------------------GRAVEYARD
+
+    # def readFromLog(self, carstate):
+    #     f = open(self.logname, "r")
+    #     lines = f.readlines()
+    #     for line in lines:
+    #         if re.match('3001', line):
+    #             if not line in self.log:
+    #                 self.log.append(line)
                     
 
         # print(self.log)
