@@ -36,6 +36,49 @@ D_out = 3
 
 seq_length = 5 # number of steps to unroll the RNN for
 
+
+
+
+class simpleNetV9(nn.Module):
+    def __init__(self):
+        super(simpleNetV9, self).__init__()
+        self.D_in = 25
+        self.hidden_size = 5
+        self.D_out = 3
+
+        self.inp_h1 = nn.Linear(self.D_in, 100)
+        self.h1_h2 = nn.Linear(100, 50)
+        self.h2_h3 = nn.Linear(50, self.hidden_size)
+        self.h3_h4 = nn.Linear(self.hidden_size, self.hidden_size)
+        self.h4_h5 = nn.Linear(self.hidden_size, self.hidden_size)
+        self.h5_h6 = nn.Linear(self.hidden_size, self.hidden_size)
+        self.out = nn.Linear(self.hidden_size, self.D_out)
+        self.relu = nn.ReLU()
+        self.tanh = nn.Tanh()
+        self.sigm = nn.Sigmoid()
+    
+    def forward(self, x):
+        h1 = self.inp_h1(x)
+        h1_act = self.relu(h1)
+        h2 = self.h1_h2(h1_act)
+        h2_act = self.relu(h2)
+        h3 = self.h2_h3(h2_act)
+        h3_act = self.relu(h3)
+        h4 = self.h3_h4(h3_act)
+        h4_act = self.relu(h4)
+        h5 = self.h4_h5(h4_act)
+        h5_act = self.relu(h5)
+        h6 = self.h5_h6(h5_act)
+        h6_act = self.relu(h6)
+
+        output = self.out(h6_act)
+        out_relu= self.sigm(output[0:2])
+        out_steer = self.tanh(output[2])
+        out_activated = torch.cat((out_relu, out_steer), 0)
+
+        return out_activated
+
+
 class MyDriver(Driver):
 
 
@@ -56,25 +99,24 @@ class MyDriver(Driver):
         )
         self.data_logger = DataLogWriter() if logdata else None
 
-        self.model = simpleNetV2()
+        self.model = simpleNetV9()
 
         self.sender = Sender(6002)
         self.pheromones = []
         # self.receiver = Receiver(6001)
 
-        weights = 'simpleNetV2_epoch_3_all_tracks.csv.pkl'
+        weights = '/home/jeroen/mount/CI_Project/torcs-client/saves/simpleNetV9_lr=0.005_epoch_9_all_tracks.csv.pkl'
 
         self.model.load_state_dict(torch.load(weights))
         self.input = torch.zeros(D_in)
-
+        self.crashCounter = 0
+        self.reverseCounter = 0
+        self.resetGear = False
         self.counter = 0
         self.name = '3001'
-        self.log = []
-        self.logname = '../logs/example3.log'
+        self.history = np.zeros((5, 2), dtype=float)
 
-
-        logging.basicConfig(filename=self.logname, level=logging.INFO, format='%(message)s')
-        
+        # sys.exit()
         print('Using: ' + weights)
 
     @property
@@ -143,44 +185,66 @@ class MyDriver(Driver):
             state_t_plus[6 + index] = edge
         return state_t_plus
 
-    def drive(self, carstate: State) -> Command:
+    def update_history(self, carstate):
+        # Roll the sequence so the last history is now at front
+        self.history = np.roll(self.history, 1)
+        self.history[0][0] = carstate.distance_from_start
+        # print(self.history)
+        # sys.exit()
+        # self.history 
+        # self.
+        # self.history = torch.cat((keep, throwaway.view(1, -1)), 0)
 
+    def check_crash(self):
+        if (self.history[0][0] - self.history[-1][0] < 0.2):
+            self.crashCounter += 1
+        else:
+            self.crashCounter = 0
+        if self.crashCounter > 100:
+            self.reverseCounter = 100
+            self.crashCounter = 0
+        print(self.crashCounter)
+
+    def drive(self, carstate: State) -> Command:
+        command = Command()
         out = self.model(Variable(self.input))
-        
         self.input = self.update_state(out, carstate)
 
-        #Create command
-        command = Command()
-        command.accelerator = out.data[0]
-        command.brake = out.data[1]
-        command.steering = out.data[2]
+        if self.reverseCounter > 0:
+            command.accelerator = 1
+            command.gear = -1
+            command.steering = 1
+            self.reverseCounter -= 1
+            self.resetGear = True
+        else:
 
-        v_x = 220
-        self.accelerate(carstate, v_x, command)
+            # out = self.model(Variable(self.input))
+            
+            # self.input = self.update_state(out, carstate)
+            self.update_history(carstate)
+            self.check_crash()
+
+            #Create command
+
+            command.accelerator = out.data[0]
+            command.brake = out.data[1]
+            command.steering = out.data[2]
+
+            v_x = 500
+            self.accelerate(carstate, v_x, command)
+            if self.resetGear:
+                command.gear = 1
+                self.resetGear = False 
 
         self.counter += 1
 
 
-        # if self.counter % 20 == 0:
-            # self.printToLog(carstate, command)
-            # self.readFromLog(carstate)
-
-        if self.counter % 1000 == 0:
-            print(self.log)
-
-
         self.input[2] = command.accelerator
         # print(self.counter)
+        if self.counter % 20 == 0:
+            print(command)
 
         # if carstate.current_lap_time % 1 == 0:
-        if self.counter % 100 == 0:
-            print("Sending mesage")
-            msg = self.sender.sendReceive(carstate.distance_from_start, )
-            self.pheromones.append(msg)
-            print(self.pheromones)
-            # print("Message received:")
-            # print(msg)
-
 
         return command
 
@@ -207,7 +271,7 @@ class MyDriver(Driver):
                 command.gear = carstate.gear + 1
 
         # else:
-        #     command.brake = min(-acceleration, 1)
+            # command.brake = min(-acceleration, 1)
 
         if carstate.rpm < 2500:
             command.gear = carstate.gear - 1
@@ -245,3 +309,10 @@ class MyDriver(Driver):
         # sys.exit()
 
 
+# if self.counter % 100 == 0:
+        #     print("Sending mesage")
+        #     msg = self.sender.sendReceive(carstate.distance_from_start, )
+        #     self.pheromones.append(msg)
+        #     print(self.pheromones)
+            # print("Message received:")
+            # print(msg)
