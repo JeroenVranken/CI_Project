@@ -10,7 +10,6 @@ import numpy as np
 import math, random
 import sys
 from networks import simpleNetV2, simpleNetV3, simpleNetV5
-from communication import Sender, Receiver
 import re
 
 import logging
@@ -35,8 +34,6 @@ D_in = 25
 D_out = 3
 
 seq_length = 5 # number of steps to unroll the RNN for
-
-
 
 
 class simpleNetV9(nn.Module):
@@ -99,19 +96,17 @@ class MyDriver(Driver):
         )
         self.data_logger = DataLogWriter() if logdata else None
 
-        self.model = simpleNetV9()
+        self.model = simpleNetV2()
 
-        self.sender = Sender(6002)
-        self.pheromones = []
-        # self.receiver = Receiver(6001)
-
-        weights = '/home/jeroen/mount/CI_Project/torcs-client/saves/simpleNetV9_lr=0.005_epoch_9_all_tracks.csv.pkl'
-
+        # weights = '/home/jeroen/mount/CI_Project/torcs-client/saves/simpleNetV9_lr=0.005_epoch__all_tracks.csv.pkl'
+        weights = 'simpleNetV2_epoch_3_all_tracks.csv.pkl'
         self.model.load_state_dict(torch.load(weights))
         self.input = torch.zeros(D_in)
         self.crashCounter = 0
         self.reverseCounter = 0
+        self. forwardCounter = 0
         self.resetGear = False
+        self.crashed  = False
         self.counter = 0
         self.name = '3001'
         self.history = np.zeros((5, 2), dtype=float)
@@ -189,40 +184,100 @@ class MyDriver(Driver):
         # Roll the sequence so the last history is now at front
         self.history = np.roll(self.history, 1)
         self.history[0][0] = carstate.distance_from_start
-        # print(self.history)
-        # sys.exit()
-        # self.history 
-        # self.
-        # self.history = torch.cat((keep, throwaway.view(1, -1)), 0)
 
-    def check_crash(self):
+    def detect_crash(self):
         if (self.history[0][0] - self.history[-1][0] < 0.2):
             self.crashCounter += 1
         else:
             self.crashCounter = 0
+
         if self.crashCounter > 100:
-            self.reverseCounter = 100
+            self.crashed = True
             self.crashCounter = 0
-        print(self.crashCounter)
+
+    def check_back_on_track(self, carstate):
+        if self.reverseCounter < 200:
+            # print(abs(carstate.distance_from_center))
+            
+            if abs(carstate.distance_from_center) < 0.5 and abs(carstate.angle) < 45:
+                # print(abs(carstate.angle))
+                # print("-------------Found center!")
+                self.crashed = False
+                self.forwardCounter = 250
+                self.reverseCounter = 0
+            else:
+                self.reverseCounter += 1
+        else:
+            # print("---------------ReverseCounter Finished!")
+            self.crashed = False
+            self.forwardCounter = 250
+            self.reverseCounter = 0
+
 
     def drive(self, carstate: State) -> Command:
         command = Command()
         out = self.model(Variable(self.input))
         self.input = self.update_state(out, carstate)
 
-        if self.reverseCounter > 0:
-            command.accelerator = 1
+        # If crashed -> reversing
+        if self.crashed:
+            self.check_back_on_track(carstate)
+            # print('crashed!')
+
+            command.accelerator = 0.5
             command.gear = -1
-            command.steering = 1
-            self.reverseCounter -= 1
+            # print("reversing")
+
+            # Only steer if incorrect angle and off track
+            if abs(carstate.angle) > 20 and abs(carstate.distance_from_center) < 1:
+
+                # If car orientated towards the right
+                if carstate.angle > 0:
+
+                    # Steer to right while reversing
+                    command.steering = -1
+                        # self.forward_steer_direction = 1
+                    self.forward_steer_direction = 0.5
+
+                else:
+                    # Steer to left while reversing
+                    command.steering = 1
+                        
+                    # else:
+                         # Steer to right while reversing
+                        # command.steering = -1
+                        # self.forward_steer_direction = 1
+                    self.forward_steer_direction = -0.5
+
+
+            # command.steering = 1
+            # self.forwardCounter -= 1
             self.resetGear = True
+        
+        
+        elif self.forwardCounter > 0:
+            # print("Turning to correct direction")
+            if self.forwardCounter > 200:
+                command.brake = 1
+            
+            # if abs(carstate.angle) > :
+            if carstate.angle > 0:
+                command.steering = 0.5
+            else:
+                command.steering = -0.5
+            # command.steering = self.forward_steer_direction
+            command.accelerator = 0.5
+            command.gear = 1
+            self.forwardCounter -= 1
+
+        # Normal behaviour
         else:
 
             # out = self.model(Variable(self.input))
             
             # self.input = self.update_state(out, carstate)
             self.update_history(carstate)
-            self.check_crash()
+            self.detect_crash()
 
             #Create command
 
@@ -242,6 +297,10 @@ class MyDriver(Driver):
         self.input[2] = command.accelerator
         # print(self.counter)
         if self.counter % 20 == 0:
+            # print(carstate.angle, command.steering)
+            # Negative angle = naar links
+
+            # Naar rechts sturen = negatief steering
             print(command)
 
         # if carstate.current_lap_time % 1 == 0:
@@ -286,12 +345,6 @@ class MyDriver(Driver):
             carstate.current_lap_time
         )
 
-    def printToLog(self, carstate, command):
-        # print(carstate)
-        # sys.exit()
-        # print(self.name, carstate.distance_from_start, carstate.distance_from_center, command.brake, command.accelerator)
-        logging.info('%s,%d,%d,%d,%d', self.name, carstate.distance_from_start, carstate.distance_from_center, command.brake, command.accelerator)
-
 
 #-------------------GRAVEYARD
 
@@ -316,3 +369,10 @@ class MyDriver(Driver):
         #     print(self.pheromones)
             # print("Message received:")
             # print(msg)
+
+    # def printToLog(self, carstate, command):
+    #     # print(carstate)
+    #     # sys.exit()
+    #     # print(self.name, carstate.distance_from_start, carstate.distance_from_center, command.brake, command.accelerator)
+    #     logging.info('%s,%d,%d,%d,%d', self.name, carstate.distance_from_start, carstate.distance_from_center, command.brake, command.accelerator)
+

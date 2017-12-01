@@ -136,6 +136,10 @@ if __name__ == '__main__':
         if epoch % plot_every == 0:
             all_losses.append(loss_avg / plot_every)
             loss_avg = 0
+            fig = plt.figure()
+            plt.plot(all_losses)
+            fig.savefig("losses_" + filename + ".png")
+            plt.close()
         
         if epoch % save_every == 0:
             torch.save(model.state_dict(), 'simpleNetV5_epoch_' + str(epoch) + '_' + filename + '.pkl')
@@ -144,6 +148,11 @@ if __name__ == '__main__':
         f= open("all_losses_" + filename + ".txt","w+")
         for i in range(len(all_losses)):
             f.write(str(all_losses[i]) + ',')
+
+        fig = plt.figure()
+        plt.plot(all_losses)
+        fig.savefig("losses_" + filename + ".png")
+        plt.close
 
 #------------------------------------ RIP --------------------------
 # def create_dataset(filenames):
