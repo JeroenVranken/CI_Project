@@ -11,10 +11,7 @@ import math, random
 import sys
 import os
 from checkpointer import *
-
 import logging
-
-import math
 
 from pytocl.analysis import DataLogWriter
 from pytocl.car import State, Command, MPS_PER_KMH
@@ -23,7 +20,6 @@ from pytocl.controller import CompositeController, ProportionalController, \
 from networks import JNetV1, JNetV2, simpleNetV2
 
 import neat
-#import evolve
 from pytocl.main import main
 import time
 import visualize
@@ -56,19 +52,28 @@ class NeatDriver:
         self.data_logger = DataLogWriter() if logdata else None
         self.eta = 20
         self.counter = 0
+
+        # import the neural net that drives the car
         self.model = simpleNetV2()
         self.weights = 'simpleNetV2_epoch_3_all_tracks.csv.pkl'
-
         self.model.load_state_dict(torch.load(self.weights))
         self.input = torch.FloatTensor(D_in)
         self.track_check1 = False
         self.track_check2 = False
-        self.action_neat = None
-        self.net = net
+
+        # import the neat neural network to handle the gear
+        config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                         'config-neat')
+        with open('winner-feedforward', 'rb') as f:
+            winner = pickle.load(f)
+        self.net = neat.nn.FeedForwardNetwork.create(winner, config)
+
         self.clock = time.time()
         self.done = False
-        self.temp_fitness = 0
 
+        # initialize the fitness with zero
+        self.temp_fitness = 0
 
 
     @property
@@ -93,26 +98,14 @@ class NeatDriver:
             self.data_logger.close()
             self.data_logger = None
 
+    # function that can create input for the neat network 
     def make_input(self, carstate, out):
-        print('rpm: ', carstate.rpm)
-        print('speed, ', carstate.speed_x)
         inputs = [carstate.rpm/10000, carstate.speed_x/100, out[0], out[1]]
         return inputs
 
     def update_state(self, pred, carstate):
-        
-        # # Roll the sequence so the last history is now at front
-        # throwaway = self.input_sequence[0]
-        # print(self.input_sequence.shape)
-        
-        state_t_plus = torch.FloatTensor(D_in)
-        # print(state_t_plus)
-        # sys.exit()
-        #Overwrite old values with new prediction and carstate
-        # print('[BEFORE]')
-        # print(state_t_plus[0][2])
-        # sys.exit()
 
+        state_t_plus = torch.FloatTensor(D_in)
         state_t_plus[0] = pred.data[0]
         state_t_plus[1] = pred.data[1]
         state_t_plus[2] = pred.data[2]
@@ -133,11 +126,11 @@ class NeatDriver:
         drivers) successfully driven along the race track."""
 
         global net
+        # define the output
         out = self.model(Variable(self.input))
-        
         self.input = self.update_state(out, carstate)
 
-        inputs = self.make_input(carstate, out.data)           
+        #inputs = self.make_input(carstate, out.data)         
 
         if self.track_check1 == True and self.check_offtrack(carstate) == True:
             self.track_check2 = True
@@ -145,14 +138,32 @@ class NeatDriver:
         if self.counter % 100 == 0:
             self.track_check1 = self.check_offtrack(carstate)
 
-        self.temp_fitness += carstate.speed_x * (np.cos(carstate.angle*(np.pi/180)) - np.absolute(np.sin(carstate.angle * (np.pi/180))))
-        self.counter += 1
+        #self.temp_fitness += carstate.speed_x * (np.cos(carstate.angle*(np.pi/180)) - np.absolute(np.sin(carstate.angle * (np.pi/180))))
 
+        # calculate the fitness
+        if(carstate.rpm > 8000 or carstate.rpm < 2500):
+            reward = -1
+        else:
+            reward = 1
+        self.temp_fitness += reward
 
+        # calculate the gear with the neat network
+        output = self.net.activate([carstate.rpm/10000])
 
-
+        # convert the outcome into a command
         command = Command()
-        command.gear = np.argmax(np.asarray(net.activate(inputs))) + 1
+        if(output[0] < -0.5):
+            command.gear = carstate.gear - 1
+        elif(output[0] > 0.5):
+            command.gear = carstate.gear + 1
+        else:
+            command.gear = carstate.gear
+        if command.gear < 1:
+            command.gear = 1
+        if command.gear > 6:
+            command.gear = 6
+
+        # Define the command with output of the other neural net
         command.accelerator = out.data[0]
         command.brake = out.data[1]
         command.steering = out.data[2]
@@ -164,7 +175,8 @@ class NeatDriver:
         if self.data_logger:
             self.data_logger.log(carstate, command)
         
-        if carstate.damage >= 9500 or carstate.last_lap_time > 0 or carstate.current_lap_time > 60:
+        # If car has too much damage or max time has exceeded do a restart
+        if carstate.damage >= 9500 or carstate.last_lap_time > 0 or carstate.current_lap_time > 120:
             global fitness
             fitness =  (self.temp_fitness/self.counter)  
             command.meta = 1
@@ -225,6 +237,8 @@ class NeatDriver:
 net = None
 fitness = 0
 counter = 1 
+eta = 1
+
 # Use the NN network phenotype and the discrete actuator force function.
 def eval_genome(genome, config):
     
@@ -234,28 +248,16 @@ def eval_genome(genome, config):
     net = neat.nn.FeedForwardNetwork.create(genome, config)
     driver = main(NeatDriver(logdata=False, net=net))
     print("ID number of genome: ", counter)
-    print("The fitness is: ", fitness)
+    print("The fitness is: ", fitness + eta)
     print("----------------------------------------")
     counter += 1
     
-    return fitness
+    return fitness + eta
 
 
 def eval_genomes(genomes, config):
     for genome_id, genome in genomes:
         genome.fitness = eval_genome(genome, config)
-
-def softmax(values):
-
-    print('values is: ', values)
-
-    # e_values = []
-    # for i in range(len(values)):
-    #     e_values.append(exp(values[i]))
-    # s = sum(e_values)
-    # inv_s = 1.0/s
-    return ev* inv_s
-
 
 def run():
     # Load the config file, which is assumed to live in
@@ -273,16 +275,21 @@ def run():
     stats = neat.StatisticsReporter()
     pop.add_reporter(stats)
     pop.add_reporter(neat.StdOutReporter(True))
-    pop.add_reporter(Checkpointer(generation_interval=10))
+    pop.add_reporter(Checkpointer(generation_interval=15))
 
-    pe = neat.ParallelEvaluator(1, eval_genome) 
-    winner = pop.run(pe.evaluate)
+    # pe = neat.ParallelEvaluator(1, eval_genome) 
+    # winner = pop.run(pe.evaluate)
 
-   # Save the winner.
+    winner = pop.run(eval_genomes, 300)
+
+    # Display the winning genome.
+    print('\nBest genome:\n{!s}'.format(winner))
+
+    # Save the winner.
     with open('winner-feedforward', 'wb') as f:
         pickle.dump(winner, f)
 
-    print(winner)
+    #print(winner)
     
     visualize.plot_stats(stats, ylog=True, view=True, filename="feedforward-fitness.svg")
     visualize.plot_species(stats, view=True, filename="feedforward-speciation.svg")
@@ -300,16 +307,3 @@ def run():
 
 if __name__ == '__main__':
     run()
-
-# # Display the winning genome.
-# print('\nBest genome:\n{!s}'.format(winner))
-
-# # Display the winning genome.
-# print('\nBest genome:\n{!s}'.format(winner))
-
-# # Show output of the most fit genome against training data.
-# print('\nOutput:')
-# winner_net = neat.nn.FeedForwardNetwork.create(winner, config)
-# for xi, xo in zip(xor_inputs, xor_outputs):
-#     output = winner_net.activate(xi)
-#     print("  input {!r}, expected output {!r}, got {!r}".format(xi, xo, output))
