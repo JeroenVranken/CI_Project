@@ -15,12 +15,16 @@ import re
 import logging
 
 import math
+import neat
+import pickle
 
 from pytocl.analysis import DataLogWriter
 from pytocl.car import State, Command, MPS_PER_KMH
 from pytocl.controller import CompositeController, ProportionalController, \
     IntegrationController, DerivativeController
-from networks import JNetV1, JNetV2, simpleNetV2 
+from networks import JNetV1, JNetV2, simpleNetV2
+import os.path
+
 
 _logger = logging.getLogger(__name__)
 
@@ -34,47 +38,6 @@ D_in = 25
 D_out = 3
 
 seq_length = 5 # number of steps to unroll the RNN for
-
-
-class simpleNetV9(nn.Module):
-    def __init__(self):
-        super(simpleNetV9, self).__init__()
-        self.D_in = 25
-        self.hidden_size = 5
-        self.D_out = 3
-
-        self.inp_h1 = nn.Linear(self.D_in, 100)
-        self.h1_h2 = nn.Linear(100, 50)
-        self.h2_h3 = nn.Linear(50, self.hidden_size)
-        self.h3_h4 = nn.Linear(self.hidden_size, self.hidden_size)
-        self.h4_h5 = nn.Linear(self.hidden_size, self.hidden_size)
-        self.h5_h6 = nn.Linear(self.hidden_size, self.hidden_size)
-        self.out = nn.Linear(self.hidden_size, self.D_out)
-        self.relu = nn.ReLU()
-        self.tanh = nn.Tanh()
-        self.sigm = nn.Sigmoid()
-    
-    def forward(self, x):
-        h1 = self.inp_h1(x)
-        h1_act = self.relu(h1)
-        h2 = self.h1_h2(h1_act)
-        h2_act = self.relu(h2)
-        h3 = self.h2_h3(h2_act)
-        h3_act = self.relu(h3)
-        h4 = self.h3_h4(h3_act)
-        h4_act = self.relu(h4)
-        h5 = self.h4_h5(h4_act)
-        h5_act = self.relu(h5)
-        h6 = self.h5_h6(h5_act)
-        h6_act = self.relu(h6)
-
-        output = self.out(h6_act)
-        out_relu= self.sigm(output[0:2])
-        out_steer = self.tanh(output[2])
-        out_activated = torch.cat((out_relu, out_steer), 0)
-
-        return out_activated
-
 
 class MyDriver(Driver):
 
@@ -98,7 +61,6 @@ class MyDriver(Driver):
 
         self.model = simpleNetV2()
 
-        # weights = '/home/jeroen/mount/CI_Project/torcs-client/saves/simpleNetV9_lr=0.005_epoch__all_tracks.csv.pkl'
         weights = 'simpleNetV2_epoch_3_all_tracks.csv.pkl'
         self.model.load_state_dict(torch.load(weights))
         self.input = torch.zeros(D_in)
@@ -109,10 +71,26 @@ class MyDriver(Driver):
         self.crashed  = False
         self.counter = 0
         self.name = '3001'
-        self.history = np.zeros((5, 2), dtype=float)
 
-        # sys.exit()
-        print('Using: ' + weights)
+        # NEAT
+        self.history = np.zeros((5, 2), dtype=float)
+        config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                         'config-neat')
+        with open('winner-feedforward', 'rb') as f:
+            winner = pickle.load(f)
+        self.net = neat.nn.FeedForwardNetwork.create(winner, config)
+
+        #SWARM
+        self.pheromones = []
+        pickle.dump(self.pheromones, open("../sent_3001.txt", "wb" ) )
+        self.straight_begin = 0
+        self.straight_end = 0
+        self.list_straight = []
+        self.list_corner = []
+        self.received = []
+        self.list_average_corcer = []
+
 
     @property
     def range_finder_angles(self):
@@ -154,6 +132,11 @@ class MyDriver(Driver):
 
         for index, edge in enumerate(carstate.distances_from_edge):
             self.input_sequence[-1][6 + index] = edge
+
+
+    def make_input(self, carstate, out):
+        inputs = [carstate.rpm/10000, carstate.speed_x/100, out[0], out[1]]
+        return inputs
 
     def update_state(self, pred, carstate):
         
@@ -213,6 +196,46 @@ class MyDriver(Driver):
             self.forwardCounter = 250
             self.reverseCounter = 0
 
+    def check_for_corner(self, steering, distance_from_start):
+        begin_corner = 0
+        if steering > 0.4 or steering < -0.4:
+            self.list_corner.append(distance_from_start)
+            self.list_average_corcer.append(steering)
+        else:
+            if len(self.list_corner) > 25:
+                average = np.average(np.asarray(self.list_average_corcer))
+                begin_corner = self.list_corner[0]
+                print(average)
+            self.list_corner = []
+        return begin_corner
+        
+
+    def check_for_acceleration(self, steering, distance_from_start):
+        begin_accel = 0
+        end_accel = 0
+        if steering > -0.05 and steering < 0.05:
+            self.list_straight.append((steering, distance_from_start))
+        else:
+            if len(self.list_straight) > 500:
+                begin_accel = self.list_straight[0][1]
+                end_accel = self.list_straight[-1][1] - 100
+                if begin_accel > end_accel:
+
+                    self.pheromones.append(("Accel", begin_accel, 100000))
+                    self.begin_accel = 0
+                self.list_straight = []
+
+        return begin_accel, end_accel
+
+    def check_for_info(self, received, distance_from_start, carspeed):
+        for info in received:
+            #if info[0] == "Accel" and distance_from_start > info[1] + 75  and distance_from_start < info[2] - 30:
+                #return 360, 1, 0, None
+            if info[0] == "Corner" and distance_from_start > info[1] - 75 and distance_from_start < info[1] - 20:
+                if carspeed * 3.6 < 135:
+                    return 135, 0.6 , 0, None
+                return 135, 0, 0.6, 0
+        return None, None, None, None 
 
     def drive(self, carstate: State) -> Command:
         command = Command()
@@ -222,11 +245,9 @@ class MyDriver(Driver):
         # If crashed -> reversing
         if self.crashed:
             self.check_back_on_track(carstate)
-            # print('crashed!')
 
             command.accelerator = 0.5
             command.gear = -1
-            # print("reversing")
 
             # Only steer if incorrect angle and off track
             if abs(carstate.angle) > 20 and abs(carstate.distance_from_center) < 1:
@@ -273,39 +294,69 @@ class MyDriver(Driver):
         # Normal behaviour
         else:
 
-            # out = self.model(Variable(self.input))
+            out = self.model(Variable(self.input))
             
-            # self.input = self.update_state(out, carstate)
+            self.input = self.update_state(out, carstate)
             self.update_history(carstate)
             self.detect_crash()
 
-            #Create command
 
             command.accelerator = out.data[0]
             command.brake = out.data[1]
             command.steering = out.data[2]
 
+            begin_corner = self.check_for_corner(command.steering, carstate.distance_from_start)
+            begin_acceleration, end_acceleration = self.check_for_acceleration(command.steering, carstate.distance_from_start)
+            if begin_corner > 0:
+                self.pheromones.append(("Corner", begin_corner))
+            if begin_acceleration > 0:
+                self.pheromones.append(("Accel", begin_acceleration, end_acceleration))
+            if self.counter % 50 == 0:
+                pickle.dump(self.pheromones, open("../sent_3001.txt", "wb" ) )
+                if os.path.isfile("../sent_3001.txt"):
+                    self.received = pickle.load( open( "../sent_3001.txt", "rb" ) )
             v_x = 500
+
+            max_speed, accel, brake, steer = self.check_for_info(self.received, carstate.distance_from_start, carstate.speed_x)
+            if max_speed is not None:
+                v_x = max_speed
+                command.accelerator = accel
+                command.brake = brake
+                if steer == 0:
+                   command.steering = steer
+
+            #command.gear = self.get_gear(carstate)  USE NEAT TO SHIFT GEARS
+
             self.accelerate(carstate, v_x, command)
             if self.resetGear:
-                command.gear = 1
+                #command.gear = self.get_gear(carstate)
                 self.resetGear = False 
+
+            if carstate.speed_x * 3.6 < 20:
+                command.brake = 0
 
         self.counter += 1
 
 
         self.input[2] = command.accelerator
-        # print(self.counter)
-        if self.counter % 20 == 0:
-            # print(carstate.angle, command.steering)
-            # Negative angle = naar links
-
-            # Naar rechts sturen = negatief steering
-            print(command)
-
-        # if carstate.current_lap_time % 1 == 0:
-
         return command
+
+    def get_gear(self, carstate):
+        output = self.net.activate([carstate.rpm/10000])
+
+        # convert the outcome into a command
+        command = Command()
+        if(output[0] < -0.5):
+            gear = carstate.gear - 1
+        elif(output[0] > 0.5):
+            gear = carstate.gear + 1
+        else:
+            gear = carstate.gear
+        if gear < 1:
+            gear = 1
+        if gear > 6:
+            gear = 6
+        return gear
 
     def accelerate(self, carstate, target_speed, command):
         # compensate engine deceleration, but invisible to controller to
@@ -325,18 +376,18 @@ class MyDriver(Driver):
                 acceleration = min(0.4, acceleration)
 
             command.accelerator = min(acceleration, 1)
-
             if carstate.rpm > 8000:
                 command.gear = carstate.gear + 1
 
         # else:
-            # command.brake = min(-acceleration, 1)
+        #     command.brake = min(-acceleration, 1)
 
-        if carstate.rpm < 2500:
+        if carstate.rpm < 4000:
             command.gear = carstate.gear - 1
 
         if not command.gear:
             command.gear = carstate.gear or 1
+     
 
     def steer(self, carstate, target_track_pos, command):
         steering_error = target_track_pos - carstate.distance_from_center
