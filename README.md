@@ -26,3 +26,6 @@ After each epoch, the weights are saves in: ```saves/networkname```.
 The code for the neat driver is in the neat-driver.py it uses the python-neat package. 
 All code of this package is in the 'neat' folder (obtained from the pyton-neat github).
 Furthermore neat-driver.py uses the config-neat and winner-feedworward file.
+
+### Deep reinforcement learning
+The code for the reinforcement learning is in the drl.py. It is also necessary to start torcs to start training and run the start.sh file in a terminal. The code will automatically restart the game when necessary. 
